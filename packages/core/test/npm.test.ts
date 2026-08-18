@@ -1,7 +1,7 @@
 import fs from "fs/promises"
 import path from "path"
 import { describe, expect, test } from "bun:test"
-import { Effect, Option } from "effect"
+import { Effect, Exit } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { Global } from "@opencode-ai/core/global"
 import { Npm } from "@opencode-ai/core/npm"
@@ -35,18 +35,16 @@ describe("Npm.sanitize", () => {
   })
 })
 
+// Offline build: runtime installs are removed — `add` only resolves pre-seeded
+// packages from the cache and fails otherwise, `install` is a no-op.
 describe("Npm.add", () => {
-  test("reifies when package cache directory exists without the package installed", async () => {
+  test("resolves a pre-seeded package from the cache without installing", async () => {
     await using tmp = await tmpdir()
-    await fs.mkdir(path.join(tmp.path, "fixture-provider"))
-    await writePackage(path.join(tmp.path, "fixture-provider"), {
-      name: "fixture-provider",
-      main: "index.js",
-    })
-    await Bun.write(path.join(tmp.path, "fixture-provider", "index.js"), "export const fixture = true\n")
-
-    const spec = `fixture-provider@file:${path.join(tmp.path, "fixture-provider")}`
-    await fs.mkdir(path.join(tmp.path, "cache", "packages", Npm.sanitize(spec)), { recursive: true })
+    const spec = "fixture-provider"
+    const pkgDir = path.join(tmp.path, "cache", "packages", Npm.sanitize(spec), "node_modules", "fixture-provider")
+    await fs.mkdir(pkgDir, { recursive: true })
+    await writePackage(pkgDir, { name: "fixture-provider", main: "index.js" })
+    await Bun.write(path.join(pkgDir, "index.js"), "export const fixture = true\n")
 
     const entry = await Effect.gen(function* () {
       const npm = yield* Npm.Service
@@ -55,10 +53,21 @@ describe("Npm.add", () => {
 
     expect(entry.entrypoint).toBeDefined()
   })
+
+  test("fails clearly when the package is not pre-seeded", async () => {
+    await using tmp = await tmpdir()
+
+    const exit = await Effect.gen(function* () {
+      const npm = yield* Npm.Service
+      return yield* npm.add("fixture-not-cached")
+    }).pipe(Effect.scoped, Effect.provide(npmLayer(path.join(tmp.path, "cache"))), Effect.exit, Effect.runPromise)
+
+    expect(Exit.isFailure(exit)).toBe(true)
+  })
 })
 
 describe("Npm.install", () => {
-  test("respects omit from project .npmrc", async () => {
+  test("is a no-op and never creates node_modules", async () => {
     await using tmp = await tmpdir()
 
     await writePackage(tmp.path, {
@@ -66,19 +75,12 @@ describe("Npm.install", () => {
       dependencies: {
         "prod-pkg": "file:./prod-pkg",
       },
-      devDependencies: {
-        "dev-pkg": "file:./dev-pkg",
-      },
     })
-    await Bun.write(path.join(tmp.path, ".npmrc"), "omit=dev\n")
     await fs.mkdir(path.join(tmp.path, "prod-pkg"))
-    await fs.mkdir(path.join(tmp.path, "dev-pkg"))
     await writePackage(path.join(tmp.path, "prod-pkg"), { name: "prod-pkg" })
-    await writePackage(path.join(tmp.path, "dev-pkg"), { name: "dev-pkg" })
 
     await Npm.install(tmp.path)
 
-    await expect(fs.stat(path.join(tmp.path, "node_modules", "prod-pkg"))).resolves.toBeDefined()
-    await expect(fs.stat(path.join(tmp.path, "node_modules", "dev-pkg"))).rejects.toThrow()
+    await expect(fs.stat(path.join(tmp.path, "node_modules"))).rejects.toThrow()
   })
 })

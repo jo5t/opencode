@@ -238,9 +238,8 @@ const layer = Layer.effect(
             tool.edit,
             tool.write,
             tool.task,
-            tool.fetch,
+            // Offline build: webfetch/websearch reach the internet — not exposed to the model.
             tool.todo,
-            tool.search,
             tool.skill,
             tool.patch,
             ...(tool.execute ? [tool.execute] : []),

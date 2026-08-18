@@ -11,8 +11,6 @@ import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
 import { SkillTool } from "./skill"
 import { TodoWriteTool } from "./todowrite"
-import { WebFetchTool } from "./webfetch"
-import { WebSearchTool } from "./websearch"
 import { WriteTool } from "./write"
 
 /**
@@ -41,8 +39,7 @@ export const node = makeLocationNode({
     ReadTool.node,
     SkillTool.node,
     TodoWriteTool.node,
-    WebFetchTool.node,
-    WebSearchTool.node,
+    // Offline build: webfetch/websearch reach the internet — not registered.
     WriteTool.node,
   ],
 })

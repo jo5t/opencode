@@ -1,0 +1,47 @@
+services:
+  opencode:
+    build:
+      context: ..
+      dockerfile: offline/Dockerfile
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+    volumes:
+      # Projektordner, auf dem opencode arbeiten soll:
+      - ${OPENCODE_WORKSPACE:-./workspace}:/workspace
+      # Persistenter State (Sessions, Cache, Auth-Store):
+      - opencode-home:/root
+      - ./opencode.json:/root/.config/opencode/opencode.json:ro
+    environment:
+      # Optional: weitere erlaubte lokale Hosts, kommagetrennt (z.B. "fritz.box"):
+      OPENCODE_ALLOW_HOSTS: ""
+    networks:
+      - airgap
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama:/root/.ollama
+    networks:
+      - airgap
+      - egress # NUR zum Modelle-Ziehen (ollama pull) — opencode hängt nicht in diesem Netz
+    # GPU (NVIDIA) — einkommentieren, falls vorhanden:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  opencode-home:
+  ollama:
+
+networks:
+  # Internes Netz ohne Route ins Internet — die harte Garantie auf Netzwerkebene.
+  airgap:
+    internal: true
+  egress: {}

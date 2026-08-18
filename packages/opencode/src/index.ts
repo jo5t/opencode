@@ -1,3 +1,5 @@
+// Offline build: must be the first import so no other module can fetch before the guard is installed.
+import "@opencode-ai/core/offline-guard"
 import yargs from "yargs"
 import { hideBin } from "yargs/helpers"
 import { RunCommand } from "./cli/cmd/run"

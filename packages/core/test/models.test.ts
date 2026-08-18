@@ -154,7 +154,9 @@ describe("ModelsDev Service", () => {
     }),
   )
 
-  it.live("get() recovers from a corrupted cache file by fetching a fresh catalog", () =>
+  // Offline build: a corrupted cache is removed and — without a bundled
+  // snapshot — the catalog is empty. No fetch happens, even with the flag off.
+  it.live("get() drops a corrupted cache file without fetching", () =>
     Effect.gen(function* () {
       yield* writeCacheText("{")
       const state = yield* Ref.make({ ...initialState, body: JSON.stringify(fixture2) })
@@ -169,10 +171,10 @@ describe("ModelsDev Service", () => {
             Flag.OPENCODE_DISABLE_MODELS_FETCH = true
           }),
       )
-      expect(result).toEqual(fixture2)
-      expect(yield* Effect.promise(() => readFile(cacheFile, "utf8"))).toBe(JSON.stringify(fixture2))
+      expect(result).toEqual({})
+      expect(yield* Effect.promise(() => readFile(cacheFile, "utf8").catch(() => undefined))).toBeUndefined()
       const final = yield* Ref.get(state)
-      expect(final.calls.length).toBe(1)
+      expect(final.calls).toEqual([])
     }),
   )
 
@@ -213,7 +215,9 @@ describe("ModelsDev Service", () => {
     }),
   )
 
-  it.live("refresh(true) fetches via HttpClient and updates the cache", () =>
+  // Offline build: refresh never fetches — it only invalidates the in-memory
+  // cache so local sources (disk file) are re-read.
+  it.live("refresh(true) re-reads local sources without fetching", () =>
     Effect.gen(function* () {
       yield* writeCache(fixture)
       const state = yield* Ref.make({ ...initialState, body: JSON.stringify(fixture2) })
@@ -222,6 +226,7 @@ describe("ModelsDev Service", () => {
         Effect.gen(function* () {
           const svc = yield* ModelsDev.Service
           const before = yield* svc.get()
+          yield* writeCache(fixture2)
           yield* svc.refresh(true)
           const after = yield* svc.get()
           return { before, after }
@@ -230,9 +235,7 @@ describe("ModelsDev Service", () => {
       expect(result.before).toEqual(fixture)
       expect(result.after).toEqual(fixture2)
       const final = yield* Ref.get(state)
-      expect(final.calls.length).toBe(1)
-      expect(final.calls[0].url).toContain("/api.json")
-      expect(final.calls[0].userAgent).toContain("/cli")
+      expect(final.calls).toEqual([])
     }),
   )
 
@@ -250,9 +253,9 @@ describe("ModelsDev Service", () => {
     }),
   )
 
-  it.live("refresh(false) fetches when on-disk file is stale", () =>
+  it.live("refresh(false) does not fetch even when the on-disk file is stale", () =>
     Effect.gen(function* () {
-      // Stale: mtime 10 minutes ago, beyond the 5-minute TTL.
+      // Stale mtime used to trigger a fetch; offline it must stay local.
       yield* writeCache(fixture, Date.now() - 10 * 60 * 1000)
       const state = yield* Ref.make({ ...initialState, body: JSON.stringify(fixture2) })
       const after = yield* provided(
@@ -264,27 +267,8 @@ describe("ModelsDev Service", () => {
         }),
       )
       const final = yield* Ref.get(state)
-      expect(final.calls.length).toBe(1)
-      expect(after).toEqual(fixture2)
-    }),
-  )
-
-  it.live("refresh swallows HTTP errors and leaves cache intact", () =>
-    Effect.gen(function* () {
-      yield* writeCache(fixture)
-      const state = yield* Ref.make({ ...initialState, status: 500, body: "boom" })
-      const result = yield* provided(
-        state,
-        Effect.gen(function* () {
-          const svc = yield* ModelsDev.Service
-          yield* svc.refresh(true)
-          return yield* svc.get()
-        }),
-      )
-      expect(result).toEqual(fixture)
-      // retryTransient retries 5xx, so calls may be > 1.
-      const final = yield* Ref.get(state)
-      expect(final.calls.length).toBeGreaterThanOrEqual(1)
+      expect(final.calls).toEqual([])
+      expect(after).toEqual(fixture)
     }),
   )
 })

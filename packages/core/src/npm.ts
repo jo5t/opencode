@@ -11,7 +11,6 @@ import { makeGlobalNode } from "./effect/app-node"
 import { filesystem } from "./effect/app-node-platform"
 import { LayerNode } from "./effect/layer-node"
 import { makeRuntime } from "./effect/runtime"
-import { NpmConfig } from "./npm-config"
 
 export class InstallFailedError extends Schema.TaggedErrorClass<InstallFailedError>()("NpmInstallFailedError", {
   add: Schema.Array(Schema.String).pipe(Schema.optional),
@@ -60,57 +59,17 @@ const resolveEntryPoint = (name: string, dir: string): EntryPoint => {
   }
 }
 
-interface ArboristNode {
-  name: string
-  path: string
-}
-
-interface ArboristTree {
-  edgesOut: Map<string, { to?: ArboristNode }>
-}
-
+// Offline build: runtime npm installs (arborist → registry.npmjs.org) are removed.
+// `add` still resolves packages that are already present in the cache directory
+// (pre-seeded or bundled) and fails with a clear error otherwise. `install` is a
+// background nicety upstream (plugin dep install into .opencode dirs) — now a no-op.
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const afs = yield* FSUtil.Service
     const global = yield* Global.Service
     const fs = yield* FileSystem.FileSystem
-    const flock = yield* EffectFlock.Service
     const directory = (pkg: string) => path.join(global.cache, "packages", sanitize(pkg))
-    const reify = (input: { dir: string; add?: string[] }) =>
-      Effect.gen(function* () {
-        yield* flock.acquire(`npm-install:${input.dir}`)
-        const { Arborist } = yield* Effect.promise(() => import("@npmcli/arborist"))
-        const add = input.add ?? []
-        const npmOptions = yield* NpmConfig.load(input.dir)
-        const arborist = new Arborist({
-          ...npmOptions,
-          path: input.dir,
-          binLinks: true,
-          progress: false,
-          savePrefix: "",
-          ignoreScripts: true,
-        })
-        return yield* Effect.tryPromise({
-          try: () =>
-            arborist.reify({
-              ...npmOptions,
-              add,
-              save: true,
-              saveType: "prod",
-            }),
-          catch: (cause) =>
-            new InstallFailedError({
-              cause,
-              add,
-              dir: input.dir,
-            }),
-        }) as Effect.Effect<ArboristTree, InstallFailedError>
-      }).pipe(
-        Effect.withSpan("Npm.reify", {
-          attributes: input,
-        }),
-      )
 
     const add = Effect.fn("Npm.add")(function* (pkg: string) {
       const dir = directory(pkg)
@@ -126,68 +85,14 @@ const layer = Layer.effect(
         return resolveEntryPoint(name, path.join(dir, "node_modules", name))
       }
 
-      const tree = yield* reify({ dir, add: [pkg] })
-      const first = tree.edgesOut.values().next().value?.to
-      if (!first) {
-        const result = resolveEntryPoint(name, path.join(dir, "node_modules", name))
-        if (result.entrypoint) return result
-        return yield* new InstallFailedError({ add: [pkg], dir })
-      }
-      return resolveEntryPoint(first.name, first.path)
+      return yield* new InstallFailedError({
+        add: [pkg],
+        dir,
+        cause: new Error(`offline build: runtime package install of "${pkg}" is disabled`),
+      })
     }, Effect.scoped)
 
-    const install: Interface["install"] = Effect.fn("Npm.install")(function* (dir, input) {
-      const canWrite = yield* afs.access(dir, { writable: true }).pipe(
-        Effect.as(true),
-        Effect.orElseSucceed(() => false),
-      )
-      if (!canWrite) return
-
-      const add = input?.add.map((pkg) => [pkg.name, pkg.version].filter(Boolean).join("@")) ?? []
-      if (
-        yield* Effect.gen(function* () {
-          const nodeModulesExists = yield* afs.existsSafe(path.join(dir, "node_modules"))
-          if (!nodeModulesExists) {
-            yield* reify({ add, dir })
-            return true
-          }
-          return false
-        }).pipe(Effect.withSpan("Npm.checkNodeModules"))
-      )
-        return
-
-      yield* Effect.gen(function* () {
-        const pkg = yield* afs.readJson(path.join(dir, "package.json")).pipe(Effect.orElseSucceed(() => ({})))
-        const lock = yield* afs.readJson(path.join(dir, "package-lock.json")).pipe(Effect.orElseSucceed(() => ({})))
-
-        const pkgAny = pkg as any
-        const lockAny = lock as any
-        const declared = new Set([
-          ...Object.keys(pkgAny?.dependencies || {}),
-          ...Object.keys(pkgAny?.devDependencies || {}),
-          ...Object.keys(pkgAny?.peerDependencies || {}),
-          ...Object.keys(pkgAny?.optionalDependencies || {}),
-          ...(input?.add || []).map((pkg) => pkg.name),
-        ])
-
-        const root = lockAny?.packages?.[""] || {}
-        const locked = new Set([
-          ...Object.keys(root?.dependencies || {}),
-          ...Object.keys(root?.devDependencies || {}),
-          ...Object.keys(root?.peerDependencies || {}),
-          ...Object.keys(root?.optionalDependencies || {}),
-        ])
-
-        for (const name of declared) {
-          if (!locked.has(name)) {
-            yield* reify({ dir, add })
-            return
-          }
-        }
-      }).pipe(Effect.withSpan("Npm.checkDirty"))
-
-      return
-    }, Effect.scoped)
+    const install: Interface["install"] = Effect.fn("Npm.install")(function* () {}, Effect.scoped)
 
     const which = Effect.fn("Npm.which")(function* (pkg: string, bin?: string) {
       const dir = directory(pkg)

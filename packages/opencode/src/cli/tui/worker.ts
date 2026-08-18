@@ -1,3 +1,5 @@
+// Offline build: workers are a separate JS realm — the guard must be installed here too, first.
+import "@opencode-ai/core/offline-guard"
 import { Server } from "@/server/server"
 import { InstanceRuntime } from "@/project/instance-runtime"
 import { Rpc } from "@/util/rpc"

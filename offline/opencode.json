@@ -1,0 +1,18 @@
+{
+  "autoupdate": false,
+  "model": "ollama/qwen3:14b",
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (lokal)",
+      "options": {
+        "baseURL": "http://ollama:11434/v1"
+      },
+      "models": {
+        "qwen3:14b": {
+          "name": "Qwen 3 14B"
+        }
+      }
+    }
+  }
+}
