@@ -58,6 +58,22 @@ OpenWebUI anzeigt, und `model` (Format `openwebui/<id>`) anpassen. Erreichst du
 das Homelab über einen Hostnamen mit Punkt (z.B. `nas.fritz.box`), trage die
 Domain in `.env` unter `OPENCODE_ALLOW_HOSTS` ein.
 
+### NuGet-Pakete einmalig vorladen (danach keine Downloads zur Laufzeit)
+
+Alles Externe passiert beim Image-Bau bzw. in diesem einmaligen Setup-Schritt.
+Pro Projekt einmal ausführen — die Pakete landen im persistenten
+`opencode-home`-Volume (`/root/.nuget`):
+
+```bash
+OPENCODE_WORKSPACE=/pfad/zum/projekt \
+  docker compose -f compose.laptop.yml run --rm --entrypoint dotnet opencode restore
+```
+
+Danach bedient sich jeder `dotnet build`/`restore`/`test` aus dem Cache, ohne
+nuget.org zu kontaktieren (Voraussetzung: feste Paketversionen, keine
+Floating-Versions wie `1.*`). Dasselbe Muster gilt für npm-Projekte
+(`--entrypoint bun opencode install`).
+
 ## Updates
 
 `opencode upgrade` ist deaktiviert. Aktualisieren = Upstream-Änderungen per
