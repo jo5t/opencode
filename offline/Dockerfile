@@ -1,8 +1,19 @@
 FROM oven/bun:1.3
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git ripgrep ca-certificates \
+    git ripgrep ca-certificates curl libicu72 \
     && rm -rf /var/lib/apt/lists/*
+
+# .NET SDKs (net9.0 + net10.0) für die eigenen Projekte. NuGet-Restore läuft
+# als normaler Subprozess im Container; der Paket-Cache (/root/.nuget) liegt
+# im persistenten opencode-home-Volume. Nicht gebraucht? Block löschen.
+RUN curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+    && bash /tmp/dotnet-install.sh --channel 9.0 --install-dir /usr/share/dotnet \
+    && bash /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet \
+    && ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
+    && rm /tmp/dotnet-install.sh
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1
 
 WORKDIR /opencode
 COPY . .
