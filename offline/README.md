@@ -20,7 +20,7 @@ teilt und nicht mit dem Internet kommunizieren kann**. Drei Verteidigungslinien:
    keine Route ins Internet — egal was der Code (oder ein gespawnter Prozess
    wie `git clone`) versucht.
 
-## Start
+## Variante A: alles auf einem Host (opencode + Ollama)
 
 ```bash
 cd offline
@@ -38,6 +38,25 @@ OPENCODE_WORKSPACE=/pfad/zu/deinem/projekt docker compose run --rm opencode
 
 Modell ändern: in `opencode.json` unter `models` eintragen und `model` anpassen
 (Format `ollama/<modellname>`), dann `ollama pull <modellname>`.
+
+## Variante B: opencode auf dem Laptop, LLM via OpenWebUI auf dem Homelab
+
+Hier läuft nur der opencode-Container lokal; das Modell wird über die
+OpenAI-kompatible API von OpenWebUI (`http://<homelab>:8080/api`) angesprochen.
+Kein `internal`-Netz — der Container muss das Homelab im LAN erreichen. Den
+Internet-Schutz übernimmt die Code-Sperre (private IPs erlaubt, Rest geblockt).
+
+```bash
+cd offline
+cp .env.example .env        # URL + API-Key eintragen (.env ist gitignored)
+docker compose -f compose.laptop.yml build
+OPENCODE_WORKSPACE=/pfad/zu/deinem/projekt docker compose -f compose.laptop.yml run --rm opencode
+```
+
+Modell ändern: in `opencode.laptop.json` den Model-Key auf die ID setzen, die
+OpenWebUI anzeigt, und `model` (Format `openwebui/<id>`) anpassen. Erreichst du
+das Homelab über einen Hostnamen mit Punkt (z.B. `nas.fritz.box`), trage die
+Domain in `.env` unter `OPENCODE_ALLOW_HOSTS` ein.
 
 ## Updates
 

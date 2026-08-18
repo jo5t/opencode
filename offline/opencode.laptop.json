@@ -1,0 +1,19 @@
+{
+  "autoupdate": false,
+  "model": "openwebui/qwen3:14b",
+  "provider": {
+    "openwebui": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "OpenWebUI (Homelab)",
+      "options": {
+        "baseURL": "{env:OPENWEBUI_API_URL}",
+        "apiKey": "{env:OPENWEBUI_API_KEY}"
+      },
+      "models": {
+        "qwen3:14b": {
+          "name": "Qwen 3 14B"
+        }
+      }
+    }
+  }
+}
