@@ -41,38 +41,38 @@ Modell ändern: in `opencode.json` unter `models` eintragen und `model` anpassen
 
 ## Variante B: opencode auf dem Laptop, LLM via OpenWebUI auf dem Homelab
 
-Hier läuft nur der opencode-Container lokal; das Modell wird über die
-OpenAI-kompatible API von OpenWebUI (`http://<homelab>:8080/api`) angesprochen.
-Kein `internal`-Netz — der Container muss das Homelab im LAN erreichen. Den
-Internet-Schutz übernimmt die Code-Sperre (private IPs erlaubt, Rest geblockt).
+Der opencode-Container läuft komplett auf dem Laptop und hängt — wie in
+Variante A — in einem `internal`-Netz **ohne Internet-Route**. Einziger Ausweg
+ist der `llm`-Proxy-Container (socat), der stur zum OpenWebUI auf dem Homelab
+durchreicht. opencode kann also nur das Modell erreichen, sonst nichts — auch
+gespawnte Prozesse nicht.
 
 ```bash
 cd offline
-cp .env.example .env        # URL + API-Key eintragen (.env ist gitignored)
+cp .env.example .env        # Homelab-Host/-Port + API-Key eintragen (.env ist gitignored)
 docker compose -f compose.laptop.yml build
 OPENCODE_WORKSPACE=/pfad/zu/deinem/projekt docker compose -f compose.laptop.yml run --rm opencode
 ```
 
 Modell ändern: in `opencode.laptop.json` den Model-Key auf die ID setzen, die
-OpenWebUI anzeigt, und `model` (Format `openwebui/<id>`) anpassen. Erreichst du
-das Homelab über einen Hostnamen mit Punkt (z.B. `nas.fritz.box`), trage die
-Domain in `.env` unter `OPENCODE_ALLOW_HOSTS` ein.
+OpenWebUI anzeigt, und `model` (Format `openwebui/<id>`) anpassen.
+Annahme: OpenWebUI ist per http (ohne TLS) erreichbar — Standard im LAN.
 
-### NuGet-Pakete einmalig vorladen (danach keine Downloads zur Laufzeit)
+### NuGet-/npm-Pakete einmalig vorladen (danach keine Downloads zur Laufzeit)
 
 Alles Externe passiert beim Image-Bau bzw. in diesem einmaligen Setup-Schritt.
-Pro Projekt einmal ausführen — die Pakete landen im persistenten
-`opencode-home`-Volume (`/root/.nuget`):
+Der `warmup`-Service ist der einzige mit Internet-Zugang; die Pakete landen im
+persistenten `opencode-home`-Volume (`/root/.nuget`), aus dem sich der
+opencode-Container später bedient:
 
 ```bash
-OPENCODE_WORKSPACE=/pfad/zum/projekt \
-  docker compose -f compose.laptop.yml run --rm --entrypoint dotnet opencode restore
+OPENCODE_WORKSPACE=/pfad/zum/projekt docker compose -f compose.laptop.yml run --rm warmup                # dotnet restore
+OPENCODE_WORKSPACE=/pfad/zum/projekt docker compose -f compose.laptop.yml run --rm warmup "bun install" # npm-Projekte
 ```
 
 Danach bedient sich jeder `dotnet build`/`restore`/`test` aus dem Cache, ohne
 nuget.org zu kontaktieren (Voraussetzung: feste Paketversionen, keine
-Floating-Versions wie `1.*`). Dasselbe Muster gilt für npm-Projekte
-(`--entrypoint bun opencode install`).
+Floating-Versions wie `1.*`).
 
 ## Updates
 

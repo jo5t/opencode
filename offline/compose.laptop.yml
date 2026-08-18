@@ -1,7 +1,9 @@
 # Laptop-Variante: opencode läuft hier, das LLM auf dem Homelab (OpenWebUI-API).
-# Kein internes Netz — der Container muss dein Homelab im LAN erreichen.
-# Schutz vor Internet-Egress übernimmt die Code-Sperre (offline-guard):
-# private IPs/LAN sind erlaubt, alles andere wird geblockt.
+#
+# opencode hängt in einem internen Netz OHNE Internet-Route (harte Garantie wie
+# in Variante A). Einziger Ausweg ist der "llm"-Proxy, der stur zu deinem
+# OpenWebUI durchreicht — mehr kann der Container nicht erreichen, egal was
+# Code oder gespawnte Prozesse versuchen.
 #
 # Nutzung:  cp .env.example .env  →  Werte eintragen  →
 #           docker compose -f compose.laptop.yml run --rm opencode
@@ -16,16 +18,49 @@ services:
     volumes:
       # Projektordner, auf dem opencode arbeiten soll:
       - ${OPENCODE_WORKSPACE:-./workspace}:/workspace
-      # Persistenter State (Sessions, Cache):
+      # Persistenter State (Sessions, Caches inkl. /root/.nuget):
       - opencode-home:/root
       - ./opencode.laptop.json:/root/.config/opencode/opencode.json:ro
     environment:
-      # OpenAI-kompatible API von OpenWebUI, z.B. http://192.168.1.50:8080/api
-      OPENWEBUI_API_URL: ${OPENWEBUI_API_URL:?In offline/.env setzen, z.B. http://192.168.1.50:8080/api}
+      # Fest auf den Proxy verdrahtet — das Ziel steht in .env beim llm-Service.
+      OPENWEBUI_API_URL: http://llm:8080/api
       # API-Key aus OpenWebUI: Einstellungen → Konto → API-Schlüssel
       OPENWEBUI_API_KEY: ${OPENWEBUI_API_KEY:?In offline/.env setzen}
-      # Optional: Homelab-Hostname mit Punkt erlauben (z.B. "fritz.box"):
-      OPENCODE_ALLOW_HOSTS: ${OPENCODE_ALLOW_HOSTS:-}
+    networks:
+      - airgap
+    depends_on:
+      - llm
+
+  # TCP-Durchreiche zum OpenWebUI auf dem Homelab (Annahme: http, kein TLS).
+  llm:
+    image: alpine/socat
+    command: TCP-LISTEN:8080,fork,reuseaddr TCP:${OPENWEBUI_HOST:?In offline/.env setzen, z.B. 192.168.1.50}:${OPENWEBUI_PORT:-8080}
+    networks:
+      - airgap
+      - egress
+
+  # Einmaliges Paket-Warmup pro Projekt (einziger Service mit Internet):
+  #   docker compose -f compose.laptop.yml run --rm warmup            # dotnet restore
+  #   docker compose -f compose.laptop.yml run --rm warmup "bun install"
+  warmup:
+    profiles: ["setup"]
+    build:
+      context: ..
+      dockerfile: offline/Dockerfile
+    working_dir: /workspace
+    volumes:
+      - ${OPENCODE_WORKSPACE:-./workspace}:/workspace
+      - opencode-home:/root
+    entrypoint: ["/bin/bash", "-lc"]
+    command: ["dotnet restore"]
+    networks:
+      - egress
 
 volumes:
   opencode-home:
+
+networks:
+  # Internes Netz ohne Route ins Internet — die harte Garantie auf Netzwerkebene.
+  airgap:
+    internal: true
+  egress: {}
